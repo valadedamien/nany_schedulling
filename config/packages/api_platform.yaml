@@ -1,0 +1,45 @@
+api_platform:
+    title: 'API skiif'
+    version: '0.1.0'
+    show_webby: false
+    name_converter: 'serializer.name_converter.camel_case_to_snake_case'
+
+    # Mapping
+    mapping:
+        paths: ['%kernel.project_dir%/src/Entity', '%kernel.project_dir%/src/ApiPlatform']
+
+    # Doc
+    swagger:
+        versions: [3]
+        api_keys:
+            apiKey:
+                name: Authorization
+                type: header
+
+    # Performance
+    eager_loading:
+        force_eager: false
+
+    # Pagination
+    defaults:
+        cache_headers:
+            vary: ['Content-Type', 'Authorization', 'Origin']
+        pagination_enabled: true
+        pagination_client_enabled: true
+        pagination_items_per_page: 30
+        # pagination_maximum_items_per_page: 200
+
+when@prod:
+    api_platform:
+        # Enable the Swagger documentation and export.
+        enable_swagger: true # default. Necessary for dependency injection
+        # Enable Swagger UI.
+        enable_swagger_ui: false
+        # Enable ReDoc.
+        enable_re_doc: false
+        # Enable the entrypoint.
+        enable_entrypoint: false
+        # Enable the docs.
+        enable_docs: false
+        # Enable the data collector and the WebProfilerBundle integration.
+        enable_profiler: false

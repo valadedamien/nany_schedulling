@@ -1,0 +1,80 @@
+services:
+  nginx:
+    image: nginx:1.17-alpine
+    container_name: nanny_scheduling_nginx
+    volumes:
+      - ./.docker/nginx/conf.d:/etc/nginx/conf.d/:ro
+      - ./:/srv/app:ro
+    ports:
+      - 8080:80
+    depends_on:
+      - php
+    environment:
+      TZ: Europe/Paris
+
+  postgres:
+    image: postgres:14-alpine
+    container_name: nanny_scheduling_postgres
+    volumes:
+      - ./.docker/db:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: nanny_scheduling
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: password
+    ports:
+      - 5432:5432
+    platform: linux/arm64/v8  # Pour macOS ARM
+
+  php:
+    build:
+      context: .
+      dockerfile: ./.docker/php/Dockerfile
+    container_name: nanny_scheduling_php
+    volumes:
+      - ./:/srv/app:rw,cached
+      # Pour éviter les problèmes de permissions en développement
+      - /srv/app/var/
+      - /srv/app/var/cache/
+      - /srv/app/var/log/
+      - /srv/app/var/sessions/
+    depends_on:
+      - postgres
+    environment:
+      DATABASE_URL: 'postgresql://app:password@postgres:5432/nanny_scheduling?serverVersion=14&charset=utf8'
+      APP_ENV: dev
+      APP_SECRET: '${APP_SECRET:-24e17c47fe1ab5fb0fa24ccfdc31fbcd}'
+      TZ: Europe/Paris
+    platform: linux/arm64/v8  # Pour macOS ARM
+
+  node:
+    image: node:20-alpine
+    container_name: nanny_scheduling_node
+    platform: linux/arm64/v8  # Pour macOS ARM
+    volumes:
+      - ./:/srv/app:cached
+    working_dir: /srv/app
+    tty: true
+
+###> doctrine/doctrine-bundle ###
+  database:
+    image: postgres:${POSTGRES_VERSION:-16}-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-app}
+      # You should definitely change the password in production
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-!ChangeMe!}
+      POSTGRES_USER: ${POSTGRES_USER:-app}
+    healthcheck:
+      test: ["CMD", "pg_isready", "-d", "${POSTGRES_DB:-app}", "-U", "${POSTGRES_USER:-app}"]
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    volumes:
+      - database_data:/var/lib/postgresql/data:rw
+      # You may use a bind-mounted host directory instead, so that it is harder to accidentally remove the volume and lose all your data!
+      # - ./docker/db/data:/var/lib/postgresql/data:rw
+###< doctrine/doctrine-bundle ###
+
+volumes:
+###> doctrine/doctrine-bundle ###
+  database_data:
+###< doctrine/doctrine-bundle ###
