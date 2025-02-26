@@ -85,7 +85,7 @@ export default class DayScheduleService {
             payload.note = daySchedule.note;
         }
 
-        return await ApiService.put<DayScheduleModel>(`/day_schedules/${id}`, payload);
+        return await ApiService.patch<DayScheduleModel>(`/day_schedules/${id}`, payload);
     }
     /**
      * Supprime un planning journalier

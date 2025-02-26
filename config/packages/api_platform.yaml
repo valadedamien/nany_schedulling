@@ -1,5 +1,5 @@
 api_platform:
-    title: 'API skiif'
+    title: 'Nanny API'
     version: '0.1.0'
     show_webby: false
     name_converter: 'serializer.name_converter.camel_case_to_snake_case'

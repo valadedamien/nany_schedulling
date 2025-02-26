@@ -7,6 +7,7 @@ namespace App\Entity;
 use ApiPlatform\Metadata\ApiResource;
 use ApiPlatform\Metadata\Get;
 use ApiPlatform\Metadata\GetCollection;
+use ApiPlatform\Metadata\Patch;
 use ApiPlatform\Metadata\Post;
 use ApiPlatform\Metadata\Put;
 use ApiPlatform\Metadata\Delete;
@@ -28,6 +29,7 @@ use Symfony\Bridge\Doctrine\Validator\Constraints\UniqueEntity;
         new GetCollection(normalizationContext: ['groups' => ['day_schedule:read']]),
         new Post(denormalizationContext: ['groups' => ['day_schedule:write']]),
         new Put(denormalizationContext: ['groups' => ['day_schedule:write']]),
+        new Patch(denormalizationContext: ['groups' => ['day_schedule:write']]),
         new Delete(),
     ],
     order: ['date' => 'ASC'],

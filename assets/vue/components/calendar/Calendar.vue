@@ -64,24 +64,41 @@
             :key="day.date"
             class="calendar-day relative h-28 border rounded-md overflow-hidden"
             :class="[
-                        day.isCurrentMonth ? 'bg-white' : 'bg-gray-50',
-                        day.isToday ? 'border-blue-500 border-2' : 'border-gray-200',
-                        { 'cursor-pointer': day.isCurrentMonth }
-                    ]"
-            @click="day.isCurrentMonth && openDayScheduleModal(day.date, day.schedule)"
+                day.isCurrentMonth ? 'bg-white' : 'bg-gray-50',
+                day.isToday ? 'border-blue-500 border-2' : 'border-gray-200',
+                { 'cursor-pointer': day.isCurrentMonth }
+            ]"
+            @click="day.isCurrentMonth && openDayModal(day.date, day.schedule, getWorkDayForDate(day.date))"
         >
-          <!-- Numéro du jour -->
-          <div
-              class="day-number absolute top-1 left-1 w-6 h-6 flex items-center justify-center rounded-full text-sm"
-              :class="day.isToday ? 'bg-blue-500 text-white' : 'text-gray-700'"
-          >
-            {{ day.day }}
+          <!-- Header section for day number and workshift badge -->
+          <div class="day-header flex justify-between items-center px-1 pt-1">
+            <!-- Numéro du jour -->
+            <div
+                class="day-number w-6 h-6 flex items-center justify-center rounded-full text-sm"
+                :class="day.isToday ? 'bg-blue-500 text-white' : 'text-gray-700'"
+            >
+              {{ day.day }}
+            </div>
+
+            <!-- Badge WorkShift si présent -->
+            <div
+                v-if="getWorkDayForDate(day.date)"
+                class="work-shift-badge"
+            >
+              <div
+                  class="h-6 p-4 flex items-center justify-center rounded-full text-xs text-white"
+                  :style="{ backgroundColor: getWorkShiftColor(getWorkDayForDate(day.date)) }"
+                  :title="getWorkShiftName(getWorkDayForDate(day.date))"
+              >
+                {{ getWorkDayForDate(day.date)?.workShift?.name }}
+              </div>
+            </div>
           </div>
 
-          <!-- Planning du jour -->
+          <!-- Planning du jour avec plus d'espace en haut -->
           <div
               v-if="day.schedule"
-              class="day-schedule mt-7 mx-1 p-1 rounded text-xs"
+              class="day-schedule mx-1 p-1 rounded text-xs mt-3"
               :style="{ backgroundColor: getScheduleColor(day.schedule) }"
           >
             <div class="font-semibold text-center">
@@ -98,7 +115,7 @@
 
           <!-- Indicateur de jour vide -->
           <div
-              v-else-if="day.isCurrentMonth"
+              v-else-if="day.isCurrentMonth && !getWorkDayForDate(day.date)"
               class="day-empty flex items-center justify-center h-full text-gray-400 text-xs italic"
           >
             <span>Cliquez pour ajouter</span>
@@ -107,15 +124,17 @@
       </div>
     </div>
 
-    <!-- Modale pour ajouter/modifier un planning -->
-    <DayScheduleModal
-        v-if="showDayScheduleModal"
+    <!-- Modale unifiée pour gérer planning et quart de travail -->
+    <DayModal
+        v-if="showDayModal"
         :date="selectedDate"
         :schedule="selectedSchedule"
         :time-slots="timeSlots"
-        @close="showDayScheduleModal = false"
-        @save="saveDaySchedule"
-        @delete="deleteDaySchedule"
+        :work-day="selectedWorkDay"
+        :work-shifts="workShifts"
+        @close="showDayModal = false"
+        @save="handleSave"
+        @delete="handleDelete"
     />
 
     <!-- Vue d'impression -->
@@ -145,38 +164,52 @@
 import { defineComponent, ref, onMounted, computed } from 'vue';
 import useSchedule from '../../composables/useSchedule';
 import useTimeSlots from '../../composables/useTimeSlots';
+import useWorkShifts from '../../composables/useWorkShifts';
+import useWorkDays from '../../composables/useWorkDays';
 import { DayScheduleModel, DayScheduleInputModel } from '../../models/DayScheduleModel';
-import DayScheduleModal from './DayScheduleModal.vue';
+import { WorkDayModel, WorkDayInputModel } from '../../models/WorkDayModel';
+import DayModal from './DayModal.vue';
 import PrintableSchedule from './PrintableSchedule.vue';
 
 export default defineComponent({
   name: 'Calendar',
   components: {
-    DayScheduleModal,
+    DayModal,
     PrintableSchedule
   },
   setup() {
     // Initialisation des composables
     const {
-      isLoading,
+      isLoading: scheduleLoading,
       formattedMonth,
       daysInMonth,
       displayYear,
       displayMonth,
       fetchMonthlySchedule,
-      changeMonth,
-      goToCurrentMonth,
+      changeMonth: changeScheduleMonth,
+      goToCurrentMonth: goToCurrentScheduleMonth,
       createDaySchedule,
       updateDaySchedule,
       deleteDaySchedule: deleteSchedule
     } = useSchedule();
 
-    const { timeSlots, timeSlotColorMap } = useTimeSlots();
+    const {
+      isLoading: workDaysLoading,
+      fetchMonthlyWorkDays,
+      createWorkDay,
+      updateWorkDay,
+      deleteWorkDay: deleteWork,
+      getWorkDay
+    } = useWorkDays();
+
+    const { timeSlots } = useTimeSlots();
+    const { workShifts } = useWorkShifts();
 
     // État de la modale
-    const showDayScheduleModal = ref(false);
+    const showDayModal = ref(false);
     const selectedDate = ref('');
     const selectedSchedule = ref<DayScheduleModel | undefined>(undefined);
+    const selectedWorkDay = ref<WorkDayModel | undefined>(undefined);
 
     // État de la vue d'impression
     const showPrintView = ref(false);
@@ -184,33 +217,118 @@ export default defineComponent({
     // Jours de la semaine
     const weekDays = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 
-    // Charger le planning du mois en cours
+    // État de chargement combiné
+    const isLoading = computed(() => scheduleLoading.value || workDaysLoading.value);
+
+    // Charger les plannings au montage du composant
     onMounted(async () => {
       const now = new Date();
-      await fetchMonthlySchedule(now.getFullYear(), now.getMonth() + 1);
+      const year = now.getFullYear();
+      const month = now.getMonth() + 1;
+
+      await fetchMonthlySchedule(year, month);
+      await fetchMonthlyWorkDays(year, month);
     });
 
-    // Ouvrir la modale pour ajouter/modifier un planning
-    const openDayScheduleModal = (date: string, schedule?: DayScheduleModel) => {
+    // Changer de mois
+    const changeMonth = async (delta: number) => {
+      await changeScheduleMonth(delta);
+      await fetchMonthlyWorkDays(displayYear.value, displayMonth.value);
+    };
+
+    // Aller au mois actuel
+    const goToCurrentMonth = async () => {
+      await goToCurrentScheduleMonth();
+      const now = new Date();
+      await fetchMonthlyWorkDays(now.getFullYear(), now.getMonth() + 1);
+    };
+
+    // Ouvrir la modale unifiée
+    const openDayModal = (date: string, schedule?: DayScheduleModel, workDay?: WorkDayModel) => {
       selectedDate.value = date;
       selectedSchedule.value = schedule;
-      showDayScheduleModal.value = true;
+      selectedWorkDay.value = workDay;
+      showDayModal.value = true;
     };
 
-    // Sauvegarder un planning
-    const saveDaySchedule = async (data: DayScheduleInputModel, id?: number) => {
-      if (id) {
-        await updateDaySchedule(id, data);
-      } else {
-        await createDaySchedule(data);
+    const handleSave = async (data: {
+      scheduleData: DayScheduleInputModel | null,
+      scheduleId: number | null,
+      workDayData: WorkDayInputModel | null,
+      workDayId: number | null,
+      shouldDeleteSchedule: boolean,
+      shouldDeleteWorkDay: boolean
+    }) => {
+      // Utilisation de Promise.all pour exécuter toutes les opérations en parallèle
+      const promises: Promise<any>[] = [];
+
+      console.log("HandleSave data:", data); // Debug pour voir quelles données sont reçues
+
+      // Traiter le planning nounou
+      if (data.shouldDeleteSchedule && data.scheduleId) {
+        // Si on doit supprimer le planning
+        console.log("Deleting schedule:", data.scheduleId);
+        promises.push(deleteSchedule(data.scheduleId));
+      } else if (data.scheduleData) {
+        // Si on doit créer ou mettre à jour le planning
+        if (data.scheduleId) {
+          console.log("Updating schedule:", data.scheduleId, data.scheduleData);
+          promises.push(updateDaySchedule(data.scheduleId, data.scheduleData));
+        } else {
+          console.log("Creating schedule:", data.scheduleData);
+          promises.push(createDaySchedule(data.scheduleData));
+        }
       }
-      showDayScheduleModal.value = false;
+
+      // Traiter le quart de travail
+      if (data.shouldDeleteWorkDay && data.workDayId) {
+        // Si on doit supprimer le quart de travail
+        console.log("Deleting workDay:", data.workDayId);
+        promises.push(deleteWork(data.workDayId));
+      } else if (data.workDayData) {
+        // Si on doit créer ou mettre à jour le quart de travail
+        if (data.workDayId) {
+          console.log("Updating workDay:", data.workDayId, data.workDayData);
+          promises.push(updateWorkDay(data.workDayId, data.workDayData));
+        } else {
+          console.log("Creating workDay:", data.workDayData);
+          promises.push(createWorkDay(data.workDayData));
+        }
+      }
+
+      // Attendre que toutes les opérations soient terminées
+      await Promise.all(promises);
+
+      // Fermer la modale
+      showDayModal.value = false;
+
+      // Recharger les données pour rafraîchir l'affichage
+      await fetchMonthlySchedule(displayYear.value, displayMonth.value);
+      await fetchMonthlyWorkDays(displayYear.value, displayMonth.value);
     };
 
-    // Supprimer un planning
-    const deleteDaySchedule = async (id: number) => {
-      await deleteSchedule(id);
-      showDayScheduleModal.value = false;
+    const handleDelete = async (data: {
+      scheduleId?: number,
+      workDayId?: number,
+      deleteSchedule: boolean,
+      deleteWorkDay: boolean
+    }) => {
+      const promises: Promise<any>[] = [];  // Spécifier explicitement le type
+
+      if (data.deleteSchedule && data.scheduleId) {
+        promises.push(deleteSchedule(data.scheduleId));
+      }
+
+      if (data.deleteWorkDay && data.workDayId) {
+        promises.push(deleteWork(data.workDayId));
+      }
+
+      await Promise.all(promises);
+      showDayModal.value = false;
+
+      // Recharger les données après suppression
+      await fetchMonthlySchedule(displayYear.value, displayMonth.value);
+      await fetchMonthlyWorkDays(displayYear.value, displayMonth.value);
     };
 
     // Obtenir la couleur du planning
@@ -219,6 +337,23 @@ export default defineComponent({
         return schedule.timeSlot.color;
       }
       return '#CBD5E1'; // Couleur par défaut (slate-300)
+    };
+
+    // Récupérer un WorkDay pour une date donnée
+    const getWorkDayForDate = (date: string): WorkDayModel | undefined => {
+      return getWorkDay(date);
+    };
+
+    // Obtenir la couleur d'un WorkShift
+    const getWorkShiftColor = (workDay?: WorkDayModel): string => {
+      if (!workDay || !workDay.workShift) return '#CBD5E1';
+      return workDay.workShift.color;
+    };
+
+    // Obtenir le nom d'un WorkShift
+    const getWorkShiftName = (workDay?: WorkDayModel): string => {
+      if (!workDay || !workDay.workShift) return 'Pas de quart';
+      return workDay.workShift.name;
     };
 
     // Formater une heure
@@ -244,16 +379,21 @@ export default defineComponent({
       displayMonth,
       weekDays,
       timeSlots,
-      showDayScheduleModal,
+      workShifts,
+      showDayModal,
       selectedDate,
       selectedSchedule,
+      selectedWorkDay,
       showPrintView,
       changeMonth,
       goToCurrentMonth,
-      openDayScheduleModal,
-      saveDaySchedule,
-      deleteDaySchedule,
+      openDayModal,
+      handleSave,
+      handleDelete,
       getScheduleColor,
+      getWorkDayForDate,
+      getWorkShiftColor,
+      getWorkShiftName,
       formatTime,
       openPrintView,
       closePrintView
@@ -278,6 +418,26 @@ export default defineComponent({
 
 .calendar-day:hover {
   box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5);
+}
+
+.day-header {
+  width: 100%;
+  min-height: 28px;
+}
+
+.work-shift-badge {
+  cursor: pointer;
+  transition: transform 0.2s;
+  z-index: 2;
+}
+
+.work-shift-badge:hover {
+  transform: scale(1.2);
+}
+
+.day-schedule {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+  border: 1px solid rgba(0, 0, 0, 0.05);
 }
 
 .print-view-container {

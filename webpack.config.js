@@ -22,12 +22,13 @@ Encore
     // Activer la prise en charge de Vue.js
     .enableVueLoader(() => {}, {
         version: 3,
-        runtimeCompilerBuild: false,
-        useJsx: true
+        runtimeCompilerBuild: false
     })
 
     // Activer TypeScript (optionnel, vous pouvez commenter ces lignes pour désactiver TypeScript temporairement)
-    .enableTypeScriptLoader()
+    .enableTypeScriptLoader((config) => {
+        config.transpileOnly = true
+    })
 
     // Activer PostCSS/Tailwind
     .enablePostCssLoader()

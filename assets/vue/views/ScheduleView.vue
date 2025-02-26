@@ -15,6 +15,13 @@
       >
         Créneaux horaires
       </button>
+      <button
+          class="tab-button"
+          :class="{ 'active': activeTab === 'workShifts' }"
+          @click="activeTab = 'workShifts'"
+      >
+        Quarts de travail
+      </button>
     </div>
 
     <div class="tab-content">
@@ -24,6 +31,9 @@
       <div v-else-if="activeTab === 'timeSlots'" class="tab-pane">
         <TimeSlotsManager />
       </div>
+      <div v-else-if="activeTab === 'workShifts'" class="tab-pane">
+        <WorkShiftsManager />
+      </div>
     </div>
   </div>
 </template>
@@ -32,12 +42,14 @@
 import { defineComponent, ref } from 'vue';
 import Calendar from '../components/calendar/Calendar.vue';
 import TimeSlotsManager from '../components/timeslot/TimeSlotsManager.vue';
+import WorkShiftsManager from '../components/workshift/WorkShiftsManager.vue';
 
 export default defineComponent({
   name: 'ScheduleView',
   components: {
     Calendar,
-    TimeSlotsManager
+    TimeSlotsManager,
+    WorkShiftsManager
   },
   setup() {
     const activeTab = ref('calendar');

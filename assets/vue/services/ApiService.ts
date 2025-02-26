@@ -59,4 +59,18 @@ export default class ApiService {
         const response = await this.api.delete<T>(url, config);
         return response.data;
     }
+
+    public static async patch<T>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T> {
+        // Merge les configurations existantes avec notre header spécifique pour PATCH
+        const patchConfig = {
+            ...config,
+            headers: {
+                ...config?.headers,
+                'Content-Type': 'application/merge-patch+json'
+            }
+        };
+
+        const response = await this.api.patch<T>(url, data, patchConfig);
+        return response.data;
+    }
 }
